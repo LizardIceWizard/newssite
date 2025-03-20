@@ -2,8 +2,10 @@ services:
   - type: web
     name: news-aggregator-backend
     env: node
+    region: oregon
+    plan: free
     buildCommand: npm install
-    startCommand: node server.js
+    startCommand: npm start
     rootDir: .
     envVars:
       - key: NODE_ENV
@@ -11,4 +13,6 @@ services:
       - key: PORT
         value: 10000
       - key: HUGGINGFACE_API_KEY
-        sync: false 
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true 
