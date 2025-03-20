@@ -7,10 +7,13 @@ const app = express();
 const PORT = process.env.PORT || 4001;
 
 // API configuration
-const NEWS_API_KEY = 'pub_75359bd99b9139ad2f71ece759cc4af0f57aa';
-const NEWS_API_URL = 'https://newsdata.io/api/1/news';
+const NEWS_API_KEY = 'f7a5280dfd08463cb68fec8f653e7965';
+const NEWS_API_URL = 'https://newsapi.org/v2/top-headlines';
 const HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn";
 const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
+const ALPHA_VANTAGE_API_KEY = 'demo'; // You'll need to get a free API key from Alpha Vantage
+const ALPHA_VANTAGE_API_URL = 'https://www.alphavantage.co/query';
+const YAHOO_FINANCE_API_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 
 // Rate limiting
 const limiter = rateLimit({
@@ -84,15 +87,19 @@ const fetchNews = async () => {
     try {
         const response = await axios.get(NEWS_API_URL, {
             params: {
-                apikey: NEWS_API_KEY,
+                apiKey: NEWS_API_KEY,
+                country: 'us',
                 category: 'business',
-                language: 'en',
-                size: 10
+                pageSize: 100, // News API allows up to 100 articles per request
+                sortBy: 'publishedAt'
+            },
+            headers: {
+                'User-Agent': 'Mozilla/5.0' // Required by News API
             }
         });
 
-        if (!response.data || !response.data.results) {
-            console.warn('Invalid response from NewsData.io');
+        if (!response.data || !response.data.articles) {
+            console.warn('Invalid response from News API');
             return [];
         }
 
@@ -100,10 +107,10 @@ const fetchNews = async () => {
         const oneDayAgo = new Date(now);
         oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
-        return response.data.results
+        return response.data.articles
             .filter(article => {
                 try {
-                    const articleDate = new Date(article.pubDate);
+                    const articleDate = new Date(article.publishedAt);
                     return !isNaN(articleDate.getTime()) && articleDate > oneDayAgo;
                 } catch (error) {
                     console.warn(`Invalid date for article: ${article.title}`);
@@ -112,13 +119,13 @@ const fetchNews = async () => {
             })
             .map(article => ({
                 title: article.title,
-                link: article.link,
-                source: article.source_id,
+                link: article.url,
+                source: article.source.name,
                 themes: getArticleThemes(article.title),
-                pubDate: article.pubDate,
-                timeAgo: formatTimeAgo(article.pubDate),
+                pubDate: article.publishedAt,
+                timeAgo: formatTimeAgo(article.publishedAt),
                 description: article.description,
-                imageUrl: article.image_url
+                imageUrl: article.urlToImage
             }))
             .filter(article => article.title && article.link);
     } catch (error) {
@@ -161,6 +168,99 @@ app.get('/filters', async (req, res) => {
     } catch (error) {
         console.error('Error fetching sources:', error);
         res.status(500).json({ error: "Failed to fetch sources" });
+    }
+});
+
+// Update the fetchStockData function to use Yahoo Finance
+const fetchStockData = async () => {
+    try {
+        const symbols = [
+            // Major Indices
+            '^GSPC',  // S&P 500
+            '^DJI',   // Dow Jones
+            '^IXIC',  // NASDAQ
+            '^FTSE',  // FTSE 100
+            '^N225',  // Nikkei 225
+            
+            // Top S&P 500 Companies
+            'AAPL',   // Apple
+            'MSFT',   // Microsoft
+            'GOOGL',  // Alphabet
+            'AMZN',   // Amazon
+            'META',   // Meta
+            'NVDA',   // NVIDIA
+            'TSLA',   // Tesla
+            'JPM',    // JPMorgan Chase
+            'V',      // Visa
+            'WMT',    // Walmart
+            
+            // Commodities
+            'GC=F',   // Gold
+            'CL=F',   // Crude Oil
+            'SI=F',   // Silver
+            'PL=F',   // Platinum
+            'NG=F'    // Natural Gas
+        ];
+
+        const stockData = await Promise.all(
+            symbols.map(async (symbol) => {
+                try {
+                    const response = await axios.get(`${YAHOO_FINANCE_API_URL}${symbol}`, {
+                        params: {
+                            interval: '1d',
+                            range: '1d'
+                        }
+                    });
+
+                    const chart = response.data.chart;
+                    if (!chart || !chart.result || !chart.result[0]) return null;
+
+                    const quote = chart.result[0];
+                    const regularMarketPrice = quote.regularMarketPrice;
+                    const previousClose = quote.previousClose;
+                    const change = regularMarketPrice - previousClose;
+                    const changePercent = (change / previousClose) * 100;
+
+                    // Format the symbol for display
+                    let displaySymbol = symbol;
+                    if (symbol.startsWith('^')) {
+                        displaySymbol = symbol.substring(1);
+                    } else if (symbol.endsWith('=F')) {
+                        displaySymbol = symbol.substring(0, symbol.length - 2);
+                    }
+
+                    return {
+                        symbol: displaySymbol,
+                        price: regularMarketPrice.toFixed(2),
+                        change: change.toFixed(2),
+                        changePercent: changePercent.toFixed(2),
+                        isPositive: change >= 0
+                    };
+                } catch (error) {
+                    console.error(`Error fetching data for ${symbol}:`, error.message);
+                    return null;
+                }
+            })
+        );
+
+        return stockData.filter(data => data !== null);
+    } catch (error) {
+        console.error('Error fetching stock data:', error.message);
+        return [];
+    }
+};
+
+// Add new endpoint for stock data
+app.get('/stocks', async (req, res) => {
+    try {
+        const stockData = await fetchStockData();
+        res.json(stockData);
+    } catch (error) {
+        console.error('Error fetching stock data:', error);
+        res.status(500).json({ 
+            error: "Failed to fetch stock data",
+            message: "An unexpected error occurred"
+        });
     }
 });
 
