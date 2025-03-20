@@ -87,7 +87,7 @@ const fetchNews = async () => {
                 apikey: NEWS_API_KEY,
                 category: 'business',
                 language: 'en',
-                size: 10  // NewsData.io has a limit of 10 articles per request
+                size: 10
             }
         });
 
@@ -135,7 +135,6 @@ app.get('/news', async (req, res) => {
         const { source, theme } = req.query;
         const articles = await fetchNews();
         
-        // Apply filters if provided
         let filteredArticles = articles;
         if (source && source !== "All") {
             filteredArticles = filteredArticles.filter(article => article.source === source);
@@ -154,7 +153,6 @@ app.get('/news', async (req, res) => {
     }
 });
 
-// Get available sources
 app.get('/filters', async (req, res) => {
     try {
         const articles = await fetchNews();
@@ -166,122 +164,10 @@ app.get('/filters', async (req, res) => {
     }
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// Add new function for AI summarization using Hugging Face
-const generateSummary = async (articles) => {
-    if (!articles || articles.length === 0) {
-        return "No major news updates for today.";
-    }
-
-    // Group articles by theme
-    const themeGroups = {};
-    articles.forEach(article => {
-        article.themes.forEach(theme => {
-            if (!themeGroups[theme]) {
-                themeGroups[theme] = [];
-            }
-            themeGroups[theme].push(article);
-        });
-    });
-
-    // Create a structured text for summarization
-    let summaryText = "Today's Financial News Summary:\n\n";
-    
-    // Market overview
-    const marketArticles = articles.filter(article => 
-        article.themes.includes("Markets") || article.themes.includes("Stocks")
-    );
-    if (marketArticles.length > 0) {
-        summaryText += "Market Movements:\n";
-        marketArticles.slice(0, 3).forEach(article => {
-            summaryText += `- ${article.title}\n`;
-        });
-        summaryText += "\n";
-    }
-
-    // Economic news
-    const economicArticles = articles.filter(article => 
-        article.themes.includes("Economy") || article.themes.includes("Banking")
-    );
-    if (economicArticles.length > 0) {
-        summaryText += "Economic Developments:\n";
-        economicArticles.slice(0, 3).forEach(article => {
-            summaryText += `- ${article.title}\n`;
-        });
-        summaryText += "\n";
-    }
-
-    // Other significant news
-    const otherArticles = articles.filter(article => 
-        !article.themes.includes("Markets") && 
-        !article.themes.includes("Stocks") && 
-        !article.themes.includes("Economy") && 
-        !article.themes.includes("Banking")
-    );
-    if (otherArticles.length > 0) {
-        summaryText += "Other Significant News:\n";
-        otherArticles.slice(0, 3).forEach(article => {
-            summaryText += `- ${article.title}\n`;
-        });
-    }
-
-    try {
-        // Call Hugging Face API for summarization
-        const response = await axios.post(
-            HUGGINGFACE_API_URL,
-            { 
-                inputs: summaryText,
-                parameters: {
-                    max_length: 500,
-                    min_length: 100,
-                    do_sample: false,
-                    num_beams: 4,
-                    early_stopping: true
-                }
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${HUGGINGFACE_API_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-
-        // Handle the API response
-        if (response.data && response.data[0] && response.data[0].summary_text) {
-            return response.data[0].summary_text;
-        } else {
-            console.warn('Unexpected API response format:', response.data);
-            return summaryText;
-        }
-    } catch (error) {
-        console.error('Error generating summary with Hugging Face:', error.message);
-        if (error.response) {
-            console.error('API Error details:', error.response.data);
-        }
-        // Fallback to basic summary if API call fails
-        return summaryText;
-    }
-};
-
-// Update the summary endpoint
-app.get('/summary', async (req, res) => {
-    try {
-        const articles = await fetchNews();
-        const todayArticles = articles.slice(0, 20); // Take top 20 articles for summary
-        const summary = await generateSummary(todayArticles);
-        res.json({ summary });
-    } catch (error) {
-        console.error('Error generating summary:', error);
-        res.status(500).json({ 
-            error: "Failed to generate summary",
-            message: "An unexpected error occurred"
-        });
-    }
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
-
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));

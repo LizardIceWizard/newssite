@@ -18,3 +18,5 @@ yarn-error.log
 # OS
 .DS_Store
 Thumbs.db 
+
+NEXT_PUBLIC_API_URL=https://your-backend-url.railway.app 
