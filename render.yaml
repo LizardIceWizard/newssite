@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node src/index.js
     rootDir: .
     envVars:
       - key: NODE_ENV
